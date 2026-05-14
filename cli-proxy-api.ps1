@@ -26,8 +26,8 @@ $script:Config = @{
     MutexName = "Global\CLIProxyAPI_Tray_SingleInstance"
 
     # GitHub Repositories
-    Repository = "router-for-me/CLIProxyAPI"
-    ProjectUrl = "https://github.com/kitephp/CLIProxyAPI-Tray"
+    Repository = "Ai-Data-Man/CLIProxyAPI"
+    ProjectUrl = "https://github.com/Ai-Data-Man/CLIProxyAPI-Tray"
 
     # Process Names (without .exe)
     ProcessName = "cli-proxy-api"
