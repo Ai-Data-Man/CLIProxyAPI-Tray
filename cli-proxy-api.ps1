@@ -860,7 +860,8 @@ function Get-GitHubApiHeaders {
 function Get-LatestGitHubTag {
     <#
     .SYNOPSIS
-        Get the latest release tag from a GitHub repository
+        Get the latest release tag from a GitHub repository.
+        Falls back to HTTP redirect parsing when API rate-limited.
     .PARAMETER Repository
         Repository in format "owner/repo"
     .OUTPUTS
@@ -871,12 +872,31 @@ function Get-LatestGitHubTag {
         [string]$Repository
     )
 
+    # Try API first (supports GITHUB_TOKEN for higher rate limit)
     $headers = Get-GitHubApiHeaders
-    $url = "https://api.github.com/repos/$Repository/releases/latest"
+    $apiUrl = "https://api.github.com/repos/$Repository/releases/latest"
 
     try {
-        $response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
+        $response = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method Get -ErrorAction Stop
         return $response.tag_name
+    }
+    catch {
+        $statusCode = $_.Exception.Response.StatusCode.value__
+        if ($statusCode -ne 403) { throw }
+    }
+
+    # Fallback: follow web redirect to avoid API rate limiting
+    # https://github.com/owner/repo/releases/latest -> Location: /owner/repo/releases/tag/vX.Y.Z
+    try {
+        $webUrl = "https://github.com/$Repository/releases/latest"
+        $response = Invoke-WebRequest -Uri $webUrl -MaximumRedirection 0 -SkipHttpErrorCheck -ErrorAction Stop
+        if ($response.StatusCode -in 301, 302, 307, 308) {
+            $location = $response.Headers.Location
+            if ($location -match '/tag/(.+?)$') {
+                return $Matches[1]
+            }
+        }
+        throw "Redirect location not found"
     }
     catch {
         throw "Failed to get latest tag from $Repository : $($_.Exception.Message)"
@@ -886,7 +906,8 @@ function Get-LatestGitHubTag {
 function Get-GitHubAssetUrl {
     <#
     .SYNOPSIS
-        Find download URL for a specific asset in latest release
+        Find download URL for a specific asset in latest release.
+        Falls back to direct URL construction when API rate-limited.
     .OUTPUTS
         String - The browser download URL
     #>
@@ -898,18 +919,28 @@ function Get-GitHubAssetUrl {
         [string]$AssetName
     )
 
+    # Try API first (supports GITHUB_TOKEN for higher rate limit)
     $headers = Get-GitHubApiHeaders
-    $url = "https://api.github.com/repos/$Repository/releases/latest"
+    $apiUrl = "https://api.github.com/repos/$Repository/releases/latest"
 
     try {
-        $release = Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
+        $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method Get -ErrorAction Stop
         $asset = $release.assets | Where-Object { $_.name -eq $AssetName } | Select-Object -First 1
-
         if (-not $asset) {
             throw "Asset not found: $AssetName"
         }
-
         return $asset.browser_download_url
+    }
+    catch {
+        $statusCode = $_.Exception.Response.StatusCode.value__
+        if ($statusCode -ne 403) { throw }
+    }
+
+    # Fallback: get tag via web redirect, then construct download URL directly
+    try {
+        $tag = Get-LatestGitHubTag -Repository $Repository
+        $owner, $repo = $Repository -split '/', 2
+        return "https://github.com/$owner/$repo/releases/download/$tag/$AssetName"
     }
     catch {
         throw "Failed to get asset URL for $AssetName : $($_.Exception.Message)"
