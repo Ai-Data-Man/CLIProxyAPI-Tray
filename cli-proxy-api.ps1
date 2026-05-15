@@ -841,6 +841,22 @@ function Stop-CLIProxyAPI {
 #endregion
 
 #region GitHub Integration
+function Get-GitHubApiHeaders {
+    <#
+    .SYNOPSIS
+        Build GitHub API headers with optional token auth for higher rate limits
+    #>
+    $headers = @{ "User-Agent" = $script:Config.AppName }
+
+    $token = [string]$env:GITHUB_TOKEN
+    if (-not $token) { $token = [string]$env:GH_TOKEN }
+    if ($token -ne "") {
+        $headers["Authorization"] = "Bearer $token"
+    }
+
+    return $headers
+}
+
 function Get-LatestGitHubTag {
     <#
     .SYNOPSIS
@@ -855,7 +871,7 @@ function Get-LatestGitHubTag {
         [string]$Repository
     )
 
-    $headers = @{ "User-Agent" = $script:Config.AppName }
+    $headers = Get-GitHubApiHeaders
     $url = "https://api.github.com/repos/$Repository/releases/latest"
 
     try {
@@ -882,7 +898,7 @@ function Get-GitHubAssetUrl {
         [string]$AssetName
     )
 
-    $headers = @{ "User-Agent" = $script:Config.AppName }
+    $headers = Get-GitHubApiHeaders
     $url = "https://api.github.com/repos/$Repository/releases/latest"
 
     try {
