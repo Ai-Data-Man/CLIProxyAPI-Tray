@@ -13,7 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$script:RepositoryUrl = "https://github.com/kitephp/CLIProxyAPI-Tray"
+$script:RepositoryUrl = "https://github.com/Ai-Data-Man/CLIProxyAPI-Tray"
 $script:ProjectFiles = @(
     "cli-proxy-api.ps1",
     "config.example.yaml",
