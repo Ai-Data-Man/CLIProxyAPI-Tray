@@ -881,25 +881,32 @@ function Get-LatestGitHubTag {
         return $response.tag_name
     }
     catch {
-        $statusCode = $_.Exception.Response.StatusCode.value__
+        $statusCode = 0
+        try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
         if ($statusCode -ne 403) { throw }
     }
 
-    # Fallback: follow web redirect to avoid API rate limiting
-    # https://github.com/owner/repo/releases/latest -> Location: /owner/repo/releases/tag/vX.Y.Z
+    # Fallback: web redirect (no API rate limit)
+    # https://github.com/owner/repo/releases/latest -> /owner/repo/releases/tag/vX.Y.Z
+    # Uses HttpWebRequest directly for PS 5.1 compatibility
     try {
         $webUrl = "https://github.com/$Repository/releases/latest"
-        $response = Invoke-WebRequest -Uri $webUrl -MaximumRedirection 0 -SkipHttpErrorCheck -ErrorAction Stop
-        if ($response.StatusCode -in 301, 302, 307, 308) {
-            $location = $response.Headers.Location
+        $request = [System.Net.WebRequest]::Create($webUrl)
+        $request.AllowAutoRedirect = $false
+        $request.UserAgent = $script:Config.AppName
+        # 3xx redirect throws WebException in PS 5.1 when AllowAutoRedirect=false
+        try { $null = $request.GetResponse() } catch { }
+        throw "Redirect location not found"
+    }
+    catch [System.Net.WebException] {
+        $resp = $_.Exception.Response
+        if ($resp) {
+            $location = $resp.Headers['Location']
             if ($location -match '/tag/(.+?)$') {
                 return $Matches[1]
             }
         }
-        throw "Redirect location not found"
-    }
-    catch {
-        throw "Failed to get latest tag from $Repository : $($_.Exception.Message)"
+        throw "Failed to get latest tag from $Repository : redirect parse failed"
     }
 }
 
@@ -932,7 +939,8 @@ function Get-GitHubAssetUrl {
         return $asset.browser_download_url
     }
     catch {
-        $statusCode = $_.Exception.Response.StatusCode.value__
+        $statusCode = 0
+        try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
         if ($statusCode -ne 403) { throw }
     }
 
