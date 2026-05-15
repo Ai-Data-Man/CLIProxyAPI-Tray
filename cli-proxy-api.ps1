@@ -894,19 +894,22 @@ function Get-LatestGitHubTag {
         $request = [System.Net.WebRequest]::Create($webUrl)
         $request.AllowAutoRedirect = $false
         $request.UserAgent = $script:Config.AppName
-        # 3xx redirect throws WebException in PS 5.1 when AllowAutoRedirect=false
-        try { $null = $request.GetResponse() } catch { }
-        throw "Redirect location not found"
-    }
-    catch [System.Net.WebException] {
-        $resp = $_.Exception.Response
-        if ($resp) {
-            $location = $resp.Headers['Location']
+        # 3xx redirect is returned normally in PS 5.1 (no exception thrown)
+        $rawResponse = $request.GetResponse()
+        $statusCode = [int]$rawResponse.StatusCode
+        if ($statusCode -in 301, 302, 307, 308) {
+            $location = $rawResponse.Headers['Location']
+            $rawResponse.Close()
             if ($location -match '/tag/(.+?)$') {
                 return $Matches[1]
             }
+            throw "Redirect location not found"
         }
-        throw "Failed to get latest tag from $Repository : redirect parse failed"
+        $rawResponse.Close()
+        throw "Unexpected status $statusCode"
+    }
+    catch {
+        throw "Failed to get latest tag from $Repository : $($_.Exception.Message)"
     }
 }
 
