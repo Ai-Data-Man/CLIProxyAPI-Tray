@@ -362,14 +362,26 @@ try {
     # Write fork-info.json if using custom repos (via env vars or -Repository parameter)
     $useFork = ($env:CLIPROXYAPI_TRAY_REPO -or $Repository -or $env:CLIPROXYAPI_REPO)
     if ($useFork) {
+        # Derive panel repo owner from CLIProxyAPI repo
+        $owner = if ($script:CLIProxyAPIRepo -match '^([^/]+)/') { $matches[1] } else { "Ai-Data-Man" }
         $forkInfo = @{
             tray_repo      = $script:RepositoryUrl
             cli_proxy_api_repo = $script:CLIProxyAPIRepo
+            panel_repo     = "https://github.com/${owner}/Cli-Proxy-API-Management-Center"
             installed_at      = (Get-Date -Format "o")
         }
         $forkInfoPath = Join-Path $applicationRoot "fork-info.json"
         $forkInfo | ConvertTo-Json | Set-Content -LiteralPath $forkInfoPath -Force
         Write-Host "[Info] Fork info written to: $forkInfoPath"
+        Write-Host "[Info] Panel repo derived as: $($forkInfo.panel_repo)"
+    }
+
+    # Update panel-github-repository in config.yaml if using custom repos
+    if ($useFork) {
+        $configYamlPath = Join-Path $applicationRoot "config.yaml"
+        if (Test-Path $configYamlPath) {
+            Update-ForkAwareConfig -ConfigPath $configYamlPath -RepositoryUrl $script:RepositoryUrl -DefaultRepositoryUrl "https://github.com/Ai-Data-Man/CLIProxyAPI-Tray"
+        }
     }
 
     # Make config fork-aware if custom repo is in use

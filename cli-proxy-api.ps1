@@ -1303,6 +1303,19 @@ function Start-CLIProxyAPI {
     # Stop any running instance before starting a fresh one
     Stop-CLIProxyAPI
 
+    # Inject CLIPROXYAPI_PANEL_REPO from fork-info.json so Go backend downloads management panel from custom repo
+    $forkInfoPath = Join-Path $PSScriptRoot "fork-info.json"
+    if (Test-Path $forkInfoPath) {
+        try {
+            $forkInfo = Get-Content $forkInfoPath -Raw | ConvertFrom-Json
+            if ($forkInfo.panel_repo) {
+                $env:CLIPROXYAPI_PANEL_REPO = $forkInfo.panel_repo
+            }
+        } catch {
+            Write-Warning "Failed to read fork-info.json: $_"
+        }
+    }
+
     # Build arguments
     $arguments = "--config `"$($script:Paths.Config)`""
 
