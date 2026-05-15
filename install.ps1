@@ -8,12 +8,31 @@ param(
 
     [switch]$NoShortcut,
 
-    [string]$Branch = "main"
+    [string]$Branch = "main",
+
+    [string]$Repository
 )
 
 $ErrorActionPreference = "Stop"
 
+# Repository configuration - precedence: -Repository parameter > env var > hardcoded default
 $script:RepositoryUrl = "https://github.com/Ai-Data-Man/CLIProxyAPI-Tray"
+if ($Repository) {
+    $script:RepositoryUrl = $Repository
+    Write-Host "[Info] Using repository URL from -Repository parameter: $script:RepositoryUrl"
+}
+elseif ($env:CLIPROXYAPI_TRAY_REPO) {
+    $script:RepositoryUrl = $env:CLIPROXYAPI_TRAY_REPO
+    Write-Host "[Info] Using repository URL from env CLIPROXYAPI_TRAY_REPO: $script:RepositoryUrl"
+}
+
+# CLIProxyAPI repo (used by the tray app for backend operations)
+$script:CLIProxyAPIRepo = "Ai-Data-Man/CLIProxyAPI"
+if ($env:CLIPROXYAPI_REPO) {
+    $script:CLIProxyAPIRepo = $env:CLIPROXYAPI_REPO
+    Write-Host "[Info] Using CLIProxyAPI repo from env CLIPROXYAPI_REPO: $script:CLIProxyAPIRepo"
+}
+
 $script:ProjectFiles = @(
     "cli-proxy-api.ps1",
     "config.example.yaml",
@@ -147,6 +166,39 @@ function Copy-ProjectFiles {
         $source = Join-Path $SourceRoot $file
         if (Test-Path -LiteralPath $source) {
             Copy-Item -LiteralPath $source -Destination (Join-Path $DestinationRoot $file) -Force
+        }
+    }
+}
+
+function Update-ForkAwareConfig {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ConfigPath,
+
+        [Parameter(Mandatory)]
+        [string]$RepositoryUrl,
+
+        [Parameter(Mandatory)]
+        [string]$DefaultRepositoryUrl
+    )
+
+    if ($RepositoryUrl -eq $DefaultRepositoryUrl) {
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $ConfigPath)) {
+        return
+    }
+
+    # Extract owner from the custom repo URL
+    # Expected format: https://github.com/OWNER/REPO
+    if ($RepositoryUrl -match '^https://github\.com/([^/]+)/') {
+        $customOwner = $matches[1]
+        $content = Get-Content -LiteralPath $ConfigPath -Raw
+        if ($content -match '(panel-github-repository:\s*"https://github\.com/)[^/]+(/[^"]+")') {
+            $content = $content -replace '(panel-github-repository:\s*"https://github\.com/)[^/]+(/[^"]+")', "`${1}$customOwner`${2}"
+            Set-Content -LiteralPath $ConfigPath -Value $content -Force
+            Write-Host "[Info] Updated panel-github-repository owner to '$customOwner' in config"
         }
     }
 }
@@ -306,6 +358,23 @@ try {
         $remoteSource = Get-RemoteSourceRoot -BranchName $Branch
         Copy-ProjectFiles -SourceRoot $remoteSource.Root -DestinationRoot $applicationRoot
     }
+
+    # Write fork-info.json if using custom repos (via env vars or -Repository parameter)
+    $useFork = ($env:CLIPROXYAPI_TRAY_REPO -or $Repository -or $env:CLIPROXYAPI_REPO)
+    if ($useFork) {
+        $forkInfo = @{
+            tray_repo      = $script:RepositoryUrl
+            cli_proxy_api_repo = $script:CLIProxyAPIRepo
+            installed_at      = (Get-Date -Format "o")
+        }
+        $forkInfoPath = Join-Path $applicationRoot "fork-info.json"
+        $forkInfo | ConvertTo-Json | Set-Content -LiteralPath $forkInfoPath -Force
+        Write-Host "[Info] Fork info written to: $forkInfoPath"
+    }
+
+    # Make config fork-aware if custom repo is in use
+    $configPath = Join-Path $applicationRoot "config.example.yaml"
+    Update-ForkAwareConfig -ConfigPath $configPath -RepositoryUrl $script:RepositoryUrl -DefaultRepositoryUrl "https://github.com/Ai-Data-Man/CLIProxyAPI-Tray"
 
     $shortcutPath = $null
     if (-not $NoShortcut) {

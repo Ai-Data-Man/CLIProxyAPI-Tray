@@ -42,6 +42,30 @@ $script:Config = @{
     BalloonTipDuration = 1500
     TimerInterval = 1000
 }
+
+# Apply environment variable overrides for fork support
+if ($env:CLIPROXYAPI_REPO) {
+    $script:Config.Repository = $env:CLIPROXYAPI_REPO
+}
+if ($env:CLIPROXYAPI_TRAY_REPO) {
+    $script:Config.ProjectUrl = $env:CLIPROXYAPI_TRAY_REPO
+}
+
+# Check for fork-info.json (created by install.ps1 when using custom forks)
+$forkInfoPath = Join-Path $PSScriptRoot "fork-info.json"
+if (Test-Path $forkInfoPath) {
+    try {
+        $forkInfo = Get-Content $forkInfoPath -Raw | ConvertFrom-Json
+        if ($forkInfo.cli_proxy_api_repo) {
+            $script:Config.Repository = $forkInfo.cli_proxy_api_repo
+        }
+        if ($forkInfo.tray_repo) {
+            $script:Config.ProjectUrl = $forkInfo.tray_repo
+        }
+    } catch {
+        Write-Warning "Failed to read fork-info.json: $_"
+    }
+}
 #endregion
 
 #region Windows API Declarations
@@ -1165,7 +1189,8 @@ Download now?
         New-Item -ItemType Directory -Path $versionDir -Force | Out-Null
 
         # Build asset names
-        $zipName = "CLIProxyAPI_${version}_windows_${arch}.zip"
+        $effectiveArch = if ($arch -eq "arm64") { "aarch64" } else { $arch }
+        $zipName = "CLIProxyAPI_${version}_windows_${effectiveArch}.zip"
 
         # Create temp directory
         $tempDir = Join-Path $env:TEMP ("cliproxy_update_" + [Guid]::NewGuid().ToString("N"))

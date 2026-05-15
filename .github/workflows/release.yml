@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag name
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate release body
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          echo "## Changelog" > release_body.md
+          echo "" >> release_body.md
+          if [ -n "$PREVIOUS_TAG" ]; then
+            git log --oneline --no-decorate "$PREVIOUS_TAG..HEAD" >> release_body.md
+          else
+            git log --oneline --no-decorate >> release_body.md
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          body_path: release_body.md
+          files: |
+            install.ps1
+            cli-proxy-api.ps1
+            cli-proxy-api.vbs
+            config.example.yaml
+            create-shortcut.bat
+            cli-proxy-api.ico
+            README.md
+            LICENSE
