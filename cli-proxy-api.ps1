@@ -1113,6 +1113,66 @@ function Invoke-PackageDownload {
 }
 #endregion
 
+#region Management Panel
+function Get-PanelRepoName {
+    <#
+    .SYNOPSIS
+        Resolve panel repo "owner/repo" from env > config > default
+    .OUTPUTS
+        String - "owner/repo" format
+    #>
+    # Priority 1: CLIPROXYAPI_PANEL_REPO env var (injected from fork-info.json by Start-CLIProxyAPI)
+    $envRepo = [string]::Empty
+    if ($env:CLIPROXYAPI_PANEL_REPO) {
+        $envRepo = $env:CLIPROXYAPI_PANEL_REPO.Trim()
+    }
+    if ($envRepo -match 'github\.com/([^/]+)/([^/"]+?)(?:\.git)?$') {
+        return "$($matches[1])/$($matches[2])"
+    }
+
+    # Priority 2: config.yaml panel-github-repository
+    $configUrl = Get-ConfigValue -Key "panel-github-repository" -Pattern '.+' -Default $null
+    if ($configUrl) {
+        $configUrl = $configUrl.Trim('"', "'")
+        if ($configUrl -match 'github\.com/([^/]+)/([^/"]+?)(?:\.git)?$') {
+            return "$($matches[1])/$($matches[2])"
+        }
+    }
+
+    # Priority 3: Hardcoded default
+    return "Ai-Data-Man/Cli-Proxy-API-Management-Center"
+}
+
+function Ensure-ManagementPanel {
+    <#
+    .SYNOPSIS
+        Pre-download management.html before Go backend starts.
+        Prevents Go backend fallback to upstream CDN when GitHub API is unreachable.
+    #>
+    $staticDir = Join-Path $PSScriptRoot "static"
+    $panelPath = Join-Path $staticDir "management.html"
+
+    # Already exists — Go backend handles updates itself
+    if (Test-Path $panelPath) {
+        return
+    }
+
+    $repoName = Get-PanelRepoName
+
+    try {
+        Write-Host "[Info] Pre-downloading management panel from ${repoName}..."
+        $downloadUrl = Get-GitHubAssetUrl -Repository $repoName -AssetName "management.html"
+        New-Item -ItemType Directory -Path $staticDir -Force | Out-Null
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $panelPath -UseBasicParsing -ErrorAction Stop
+        Write-Host "[Info] Management panel downloaded to: $panelPath"
+    }
+    catch {
+        Write-Warning "Failed to pre-download management panel: $($_.Exception.Message)"
+        Write-Warning "Go backend will attempt download on first access"
+    }
+}
+#endregion
+
 #region Version Management
 function Test-VersionInstalled {
     <#
@@ -1315,6 +1375,9 @@ function Start-CLIProxyAPI {
             Write-Warning "Failed to read fork-info.json: $_"
         }
     }
+
+    # Pre-download management panel so Go backend never hits upstream CDN fallback
+    Ensure-ManagementPanel
 
     # Build arguments
     $arguments = "--config `"$($script:Paths.Config)`""
